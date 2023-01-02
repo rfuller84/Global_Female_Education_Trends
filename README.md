@@ -1,1 +1,3 @@
-# Global_Female_Education_Trends
+# Global Female Education Trends
+
+This project will explore how the educational opportunities for girls have changed throughout the world since 1970. The dataset to be explored comes from the [World Bank's Gender Data Portal](https://genderdata.worldbank.org/). The dataset includes indicators from fields including assets, education, employment, health, technology, violence, and more. This project will examine how primary, secondary and tertiary school enrollment has changed over time in different regions of the world as well as what countries have seen the most growth in expected years of schooling for girls.
