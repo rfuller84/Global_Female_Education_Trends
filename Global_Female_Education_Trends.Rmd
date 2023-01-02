@@ -1,0 +1,560 @@
+---
+title: "Global Female Education Trends"
+author: "Ryan Fuller"
+date: '2022-12-27'
+output: html_document
+---
+
+<style type="text/css">
+  body{
+  font-size: 12pt;
+}
+</style>
+
+<br>
+This project will explore how the educational opportunities for girls have changed throughout the world since 1970. The dataset to be explored comes from the [World Bank's Gender Data Portal](https://genderdata.worldbank.org/). The dataset includes indicators from fields including assets, education, employment, health, technology, violence, and more. This project will examine how primary, secondary and tertiary school enrollment has changed over time in different regions of the world as well as what countries have seen the most growth in expected years of schooling for girls. 
+<br>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+knitr::opts_chunk$set(fig.width=10, fig.height=6) 
+library("utils")
+library("tidyverse")
+library("stringr")
+library('knitr')
+library('ggtext')
+
+facet_theme <- theme(
+    plot.title = element_text(size = 18, hjust= 0.5),
+    axis.title = element_text(size = 16),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    strip.text.x = element_text(size = 12),
+    axis.text = element_text(size = 10)
+    )
+
+custom_theme = theme(
+  plot.title = element_text(size = 16, hjust= 0.5),
+    axis.title = element_text(size = 16),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 12)
+)
+```
+
+
+
+```{r import data}
+setwd("/Users/ryanfuller/Documents/Data & Analyses/World Bank - Gender Stats")
+
+gender_data_full<-as_tibble(read.csv("Gender_Stats_csv/Gender_StatsData.csv"))
+```
+The World Bank Gender Portal data frame consists of `r length(gender_data_full$Indicator.Name)` rows and `r length(gender_data_full)` columns.
+
+
+Here is a sample of the data frame: 
+```{r echo = FALSE}
+knitr::kable(gender_data_full[0:6,0:6], format="markdown")
+```
+
+```{r}
+indicator_list <- distinct(gender_data_full,Indicator.Name,Indicator.Code)
+
+```
+
+### Indicators
+
+There are `r length(indicator_list$Indicator.Name)` indicators in the data frame. Here are some of them: 
+
+```{r}
+knitr::kable(indicator_list[0:6,0:1], format="markdown")
+```
+
+
+```{r}
+
+school_indicators = filter(indicator_list,
+                   grepl('School', Indicator.Name)|grepl('school', Indicator.Name))
+
+```
+<br>
+
+### School Indicators
+
+We want to focus on the indicators related to schooling, so we will identify indicators that contain the word "school" or "School". Here are the school indicators in the data frame: 
+
+```{r}
+knitr::kable(school_indicators[,1:1], format="markdown")
+```
+
+```{r}
+
+LA_schooling <- filter(gender_data_full,Country.Name == 'Latin America & Caribbean',Indicator.Name%in%(school_indicators$Indicator.Name))
+
+
+LA_Valid_Indicators <- filter(LA_schooling, !is.na(X1970))
+valid_indicators <- LA_Valid_Indicators %>% pull(Indicator.Name)
+```
+### Indicators With Data
+
+In Latin America, there is no school indicator data before 1970. Many school indicators do not have any data in Latin America or do not have data until the 80's or 90's. We will focus our study on school indicators that had data starting in 1970. Here are the school indicators with entries going back to 1970 in Latin America: 
+```{r}
+knitr::kable(LA_Valid_Indicators[,3:3], format="markdown")
+```
+
+
+```{r}
+country_list <- distinct(gender_data_full,Country.Name,Country.Code)
+countries_all <- as.list(country_list$Country.Name) 
+countries <- countries_all[c(49:265)]
+```
+### Regions and Countries
+
+There are `r length(country_list$Country.Name)` regions in the data frame. `r length(countries)` are individual countries while others are continents or regions grouped by income. Here are some of the regions:
+
+```{r}
+knitr::kable(country_list[1:10,1:1], format="markdown")
+```
+
+We will start by analyzing the following regions to get a sense of female schooling trends across the world: 
+
+```{r}
+regions <- list('North America','Latin America & Caribbean','European Union','East Asia & Pacific','Middle East & North Africa','Sub-Saharan Africa')
+regions_list <- matrix(regions)
+```
+
+```{r}
+knitr::kable(regions_list, format="markdown")
+```
+
+
+```{r functions, echo = FALSE}
+# Function used to create tibbles for specific regions and indicators that can be easily plotted
+indicator_data <- function(countries, ind_name) {
+  ind_year_region <- filter(gender_data_full,Country.Name%in%(countries) & Indicator.Name == ind_name) %>%
+    gather(Year,col_name,X1970:X2015) %>%
+    select(Year, Country.Name,Country.Code, col_name) %>%
+      mutate(Year=as.numeric(str_sub(Year,-4)))%>%
+        na.omit()
+  return(ind_year_region)
+}
+
+# Function that creates a tibble of male and female data that can be easily plotted
+gender_merge <- function(male_data, female_data) {
+  combined <- female_data
+  combined$male <- male_data$col_name
+  combined <- rename(combined, female = col_name)
+  combined_tidy <- gather(combined, gender, indicator, female:male)%>%
+    select(Year, Country.Name,Country.Code, gender, indicator)
+  return(combined_tidy)
+}
+```
+
+
+### Expected Years of Schooling
+
+We will start by examining how the [expected years of schooling](https://databank.worldbank.org/metadataglossary/world-development-indicators/series/SE.SCH.LIFE) have changed for males and females in different regions. Here is how this indicator is calculated:
+
+*Expected years of schooling is the number of years a child of school entrance age is expected to spend at school, or university, including years spent on repetition. It is the sum of the age-specific enrollment ratios for primary, secondary, post-secondary non-tertiary and tertiary education.*
+
+<br>
+
+```{r years of schooling, echo = FALSE}
+schooling_female <- indicator_data(countries = regions, ind_name = 'Expected years of schooling, female')
+schooling_male <- indicator_data(countries = regions, ind_name = 'Expected years of schooling, male')
+
+schooling_years <- gender_merge(schooling_male, schooling_female)
+schooling_years_plot <- ggplot (schooling_years, aes(x=Year,y=indicator)) +
+  geom_line(aes(color = gender),size=.8) + facet_wrap(~Country.Name) + theme_bw() + labs(
+    title = "Expected Years of Schooling 1970-2015",
+    x = "Year",
+    y = "Expected Years of Schooling"
+  ) + guides(color = guide_legend(title = "Gender")) + scale_y_continuous( limits=c(0,18)) + facet_theme
+
+schooling_years_plot
+
+ggsave('schooling_years.png',
+       schooling_years_plot,
+       width = 10,
+       height = 6)
+
+```
+
+<br>
+
+Expected years of schooling has increased from 1970 to 2015 in all regions. In almost all regions, the expected schooling for girls has approached or exceeded that of boys. The expected years of schooling in Middle East/North Africa in 2015 is about the same as it was for Europe in the 1970's (about 13 years).
+
+<br>
+
+### School Enrollment Changes
+
+We will now look at how primary, secondary, and tertiary school enrollment has changed for males and females in different regions. Note that there will be some instances where gross enrollment is over 100%. This is due to the way [gross enrollment](https://datahelpdesk.worldbank.org/knowledgebase/articles/114955-how-can-gross-school-enrollment-ratios-be-over-100) is calculated:
+
+*"Gross" enrollment includes students of all ages. In other words, it includes students whose age exceeds the official age group (e.g. repeaters). Thus, if there is late enrollment, early enrollment, or repetition, the total enrollment can exceed the population of the age group that officially corresponds to the level of education – leading to ratios greater than 100 percent*
+
+<br>
+
+```{r prepriary, echo = FALSE}
+preprimary_male <- indicator_data(countries = regions, ind_name = "School enrollment, preprimary, male (% gross)")
+
+preprimary_female <- indicator_data(countries = regions, ind_name = "School enrollment, preprimary, female (% gross)")
+
+
+preprimary_enrollment <- gender_merge(preprimary_male, preprimary_female)
+
+
+preprimary_enroll_plot <- ggplot (preprimary_enrollment, aes(x=Year,y=indicator)) +
+  geom_line(aes(color = gender), size=.8) + facet_wrap(~Country.Name) + theme_bw() + labs(
+    title = "Preprimary Enrollment 1970-2015",
+    x = "Year",
+    y = "Percent Enrolled (gross)"
+  ) + scale_y_continuous( limits=c(0,105)) + guides(color = guide_legend(title = "Gender")) + facet_theme
+
+preprimary_enroll_plot
+
+ggsave('preprimary_enroll.png',
+       preprimary_enroll_plot,
+       width = 10,
+       height = 6)
+```
+<br>
+
+Preprimary enrollment is similar for girls and boys in each region and has increased the most in the Latin America/Caribbean and East Asia/Pacific regions. In Middle East/North Africa and Sub-Saharan Africa, enrollment has moderately increased since 1970, but is still under 40%, well below the other regions. 
+
+<br>
+
+We will now look at net primary enrollment for males and females. As explained [here](https://databank.worldbank.org/metadataglossary/world-development-indicators/series/SE.PRM.NENR):
+
+*net enrollment rate excludes overage and underage students and more accurately captures the system's coverage and internal efficiency*
+
+<br>
+
+```{r primary, echo = FALSE}
+primary_female <- indicator_data(countries = regions, ind_name = "School enrollment, primary, female (% net)")
+primary_male <- indicator_data(countries = regions, ind_name = "School enrollment, primary, male (% net)")
+
+primary_enrollment <- gender_merge(primary_male, primary_female)
+
+primary_enroll_plot <- ggplot (primary_enrollment, aes(x=Year,y=indicator)) +
+  geom_line(aes(color = gender)) + facet_wrap(~Country.Name) + theme_bw() + labs(
+    title = "Primary School Enrollment 1970-2015",
+    x = "Year",
+    y = "Percent Enrolled (net)"
+  ) + scale_y_continuous(limits=c(0,105))+ guides(color = guide_legend(title = "Gender")) + facet_theme
+
+primary_enroll_plot
+
+ggsave('primary_enroll.png',
+       primary_enroll_plot,
+       width = 10,
+       height = 6)
+
+```
+
+<br>
+
+In 2015 net primary enrollment is at least 90% in all regions except Sub-Saharan Africa for which there has not been net primary enrollment data since 2009. The female net primary enrollment rate roughly doubled in the Middle East/North Africa and Sub-Saharan Africa regions in the years plotted above.
+
+<br>
+
+```{r secondary, echo = FALSE}
+secondary_female <- indicator_data(countries = regions, ind_name = "School enrollment, secondary, female (% gross)")
+secondary_male <- indicator_data(countries = regions, ind_name = "School enrollment, secondary, male (% gross)")
+
+secondary_enrollment <- gender_merge(secondary_male, secondary_female)
+
+secondary_enroll_plot <- ggplot (secondary_enrollment, aes(x=Year,y=indicator)) +
+  geom_line(aes(color = gender)) + facet_wrap(~Country.Name) + theme_bw() + labs(
+    title = "Secondary School Enrollment",
+    x = "Year",
+    y = "Percent Enrolled (gross)"
+  ) + scale_y_continuous(limits=c(0,105)) + guides(color = guide_legend(title = "Gender")) + facet_theme
+
+secondary_enroll_plot
+
+ggsave('secondary_enroll.png',
+       secondary_enroll_plot,
+       width = 10,
+       height = 6)
+
+```
+
+<br>
+
+For secondary enrollment, the graphs still show a general increasing trend for boys and girls, but some regions experienced periods of enrollment declines. Secondary enrollment in the East Asia/Pacific region experienced a decline in the early 1980's. Interestingly, in North America in the 1970's, male enrollment sharply decreased while female enrollment sharply increased. It's possible that conflicts that some countries in these regions were involved with caused these decreases.
+
+<br>
+
+```{r tertiary, echo = FALSE}
+tertiary_female <- indicator_data(countries = regions, ind_name = "School enrollment, tertiary, female (% gross)")
+tertiary_male <- indicator_data(countries = regions, ind_name = "School enrollment, tertiary, male (% gross)")
+
+tertiary_enrollment <- gender_merge(tertiary_male, tertiary_female)
+
+tertiary_enroll_plot <- ggplot (tertiary_enrollment, aes(x=Year,y=indicator)) +
+  geom_line(aes(color = gender)) + facet_wrap(~Country.Name) + theme_bw() + labs(
+    title = "Tertiary School Enrollment",
+    x = "Year",
+    y = "Percent Enrolled (gross)"
+  ) + scale_y_continuous(limits=c(0,105)) + guides(color = guide_legend(title = "Gender")) + facet_theme
+
+tertiary_enroll_plot
+
+ggsave('tertiary_enroll.png',
+       tertiary_enroll_plot,
+       width = 10,
+       height = 6)
+
+```
+
+<br>
+
+In all regions except Sub-Saharan Africa, female tertiary enrollment numbers exceeded that of males at some point. In the Latin America/Caribbean, North America, and the European Union, the gap is largest and appears to be widening. This could be due to the changing nature of work in these regions. In North America, the gross tertiary enrollment for females exceeds 100%, which indicates that many North American women are going back to school as adults.
+
+<br>
+
+### Gender Parity Index
+
+We will now look at the Gender Parity Index (GPI) for different indicators. The GPI for gross enrollment is the ratio of girls to boys enrolled in public and private schools. A GPI of 0.5 indicates that there are half as many girls as boys enrolled. A ratio greater than 1.0 indicates that there are more girls than boys enrolled. We will start by looking at the [GPI for primary and secondary education enrollment](https://databank.worldbank.org/metadataglossary/gender-statistics/series/SE.ENR.PRSC.FM.ZS):
+
+<br>
+
+```{r}
+regions_world <- append(regions,'World')
+school_enrollment_GPI= indicator_data(countries = regions_world, ind_name = 'School enrollment, primary and secondary (gross), gender parity index (GPI)')
+
+pri_sec_GPI_plot <- ggplot (school_enrollment_GPI, aes(x=Year,y=col_name, group=Country.Code,color=Country.Name)) + geom_line(size=.8) + guides(color = guide_legend(title = "Region")) + scale_x_continuous(name="Year", limits=c(1970, 2015)) + labs(title = 'Primary and Secondary Gender Parity Index (GPI) 1970-2015') + scale_y_continuous(name = "School Enrollment GPI") + theme_bw(base_size=12) + custom_theme
+
+pri_sec_GPI_plot
+
+ggsave('primary_secondary_GPI.png',
+       pri_sec_GPI_plot,
+       width = 10,
+       height = 6)
+    
+```
+
+<br>
+
+Since 1970, the primary and secondary enrollment GPI has steadily increased in all regions where it wasn't already near 1.0 in 1970. There was a large, temporary drop in the North American GPI in the late 1990's.
+
+<br>
+
+```{r}
+ter_school_enrollment_GPI= indicator_data(countries = regions_world, ind_name = 'School enrollment, tertiary (gross), gender parity index (GPI)')
+
+
+ter_GPI_plot <- ggplot (ter_school_enrollment_GPI, aes(x=Year,y=col_name, group=Country.Code,color=Country.Name)) + geom_line(size=.8) + guides(color = guide_legend(title = "Region")) + scale_x_continuous(name="Year", limits=c(1970, 2015)) + labs(title = 'Tertiary Gender Parity Index (GPI) 1970-2015') + scale_y_continuous(name = "School Enrollment GPI") + theme_bw(base_size=12) + custom_theme
+
+ter_GPI_plot
+
+ggsave('tertiary_GPI.png',
+       ter_GPI_plot,
+       width = 10,
+       height = 6)
+```
+
+<br>
+
+The tertiary enrollment GPI increased in all regions and, as of 2015, is larger than 1.0 in all regions except Sub-Saharan Africa. This means that in almost all regions of the world, there are more women than men pursuing post-secondary education.
+
+<br>
+
+### Indicator Distributions
+
+We will now look at histograms for different indicators for a data frame that includes all `r length(countries)` countries in the World Bank Gender Portal. Looking at histograms can help us identify global trends. Each histogram will include two sets of bins: one set from 1990 and one set from 2015. We will start by examining the distribution of female secondary school access in 1990 and in 2015.
+
+<br>
+
+```{r echo = FALSE}
+all_secondary_female <- indicator_data(countries = countries, ind_name = "School enrollment, secondary, female (% gross)")
+#all_secondary_male <- indicator_data(countries = countries, ind_name = "School enrollment, secondary, male (% gross)")
+
+#all_secondary_enrollment <- gender_merge(all_secondary_male, all_secondary_female)
+
+all_sec_fem_hist <- ggplot(all_secondary_female, aes(x=col_name)) + 
+  geom_histogram(data=subset(all_secondary_female, Year==1990), 
+                 color="darkred", fill="red", alpha=0.2, bins = 25) + 
+  geom_histogram(data=subset(all_secondary_female, Year==2015), 
+                 color="darkblue", fill="blue", alpha=0.2, bins = 25)+ labs(
+    title = "Female Secondary Enrollment Histogram for <span style = 'color: red;'>1990</span> and <span style = 'color: blue;'>2015</span>",
+    x = "Female Secondary Enrollment (gross)",
+    y = "Frequency"
+  ) + theme_classic() + custom_theme + theme(plot.title = element_markdown()) 
+
+all_sec_fem_hist
+
+ggsave('all_sec_fem_hist.png',
+       all_sec_fem_hist,
+       width = 10,
+       height = 6)
+```
+
+<br>
+
+In 1990, female secondary enrollment percentages were fairly evenly distributed between 0% and 100%. In 2015, many more countries had gross enrollment figures near 100%.
+
+<br>
+
+```{r}
+all_tertiary_female <- indicator_data(countries = countries, ind_name = "School enrollment, tertiary, female (% gross)")
+#all_tertiary_male <- indicator_data(countries = countries, ind_name = "School enrollment, tertiary, male (% gross)")
+
+#all_tertiary_enrollment <- gender_merge(all_tertiary_male, all_tertiary_female)
+
+all_ter_fem_hist <- ggplot(all_tertiary_female, aes(x=col_name)) + 
+  geom_histogram(data=subset(all_tertiary_female, Year==1990), 
+                 color="darkred", fill="red", alpha=0.2, bins = 25) + 
+  geom_histogram(data=subset(all_tertiary_female, Year==2015), 
+                 color="darkblue", fill="blue", alpha=0.2, bins = 25) + labs(
+    title = "Female Tertiary Enrollment Histogram for <span style = 'color: red;'>1990</span> and <span style = 'color: blue;'>2015</span>",
+    x = "Female Tertiary Enrollment (gross)",
+    y = "Frequency"
+  ) + theme_classic() + custom_theme + theme(plot.title = element_markdown())
+
+all_ter_fem_hist
+
+ggsave('all_ter_fem_hist.png',
+       all_ter_fem_hist,
+       width = 10,
+       height = 6)
+
+```
+
+<br>
+
+In 1990, female tertiary enrollment percentages were right skewed and almost entirely below 50%. In 2015, the distribution was more evenly distributed between 0% and 100%.
+
+<br>
+
+```{r}
+all_schooling_female <- indicator_data(countries = countries, ind_name = "Expected years of schooling, female")
+
+
+all_sch_fem_hist <- ggplot(all_secondary_female, aes(x=col_name)) + 
+  geom_histogram(data=subset(all_schooling_female, Year==1990), 
+                 color="darkred", fill="red", alpha=0.2, bins=25) + 
+  geom_histogram(data=subset(all_schooling_female, Year==2015), 
+                 color="darkblue", fill="blue", alpha=0.2, bins=25) + labs(
+    title = "Female Schooling Years Histogram for <span style = 'color: red;'>1990</span> and <span style = 'color: blue;'>2015</span>",
+    x = "Expected Female Schooling Years",
+    y = "Frequency"
+  ) + theme_classic() + custom_theme + theme(plot.title = element_markdown())
+
+all_sch_fem_hist
+
+ggsave('all_sch_fem_hist.png',
+       all_sch_fem_hist,
+       width = 10,
+       height = 6)
+
+```
+
+<br>
+
+In 1990, the female schooling years were fairly evenly distributed between 0 and 15 years with a spike at 13. In 2015, the distribution is much closer to a normal distribution centered at 16 years.
+
+<br>
+
+```{r growth, echo = FALSE}
+schooling_growth_1971 <- filter(gender_data_full, Indicator.Name == 'Expected years of schooling, female', Country.Name%in%(countries)) %>%
+  mutate(growth_1971 = X2015 - X1971)  %>% 
+  arrange(desc(growth_1971)) %>% 
+  select(Country.Name, growth_1971)
+
+schooling_growth_2000 <- filter(gender_data_full, Indicator.Name == 'Expected years of schooling, female', Country.Name%in%(countries)) %>%
+  mutate(growth_2000 = X2015 - X2000)  %>% 
+  arrange(desc(growth_2000)) %>% 
+  select(Country.Name, growth_2000)
+
+
+top_growth_country_1971 <- as.list(schooling_growth_1971$Country.Name)[0:6]%>%
+  append('World')
+
+top_growth_1971 = indicator_data(countries = top_growth_country_1971, ind_name = 'Expected years of schooling, female')
+
+```
+
+### Countries With Highest Growth
+
+We will now identify which countries have seen the most growth in expected years of schooling for girls. The graphs below will include data for the entire world as reference. Here are the countries where expected years of schooling for females grew the most from 1971 to 2015:
+
+```{r echo = FALSE}
+knitr::kable(schooling_growth_1971[0:6,0:2], format="markdown")
+```
+
+
+```{r echo = FALSE}
+
+top_growth_1971_plot <- ggplot (top_growth_1971, aes(x=Year,y=col_name, group=Country.Code,color=Country.Name)) + geom_line(size=.8) + guides(color = guide_legend(title = "Country")) + scale_x_continuous(name="Year", limits=c(1970, 2015)) + labs(title = 'Expected Female Schooling for Highest Growth Countries (1971-2015)') + scale_y_continuous(name = "Expected Years of Schooling") + theme_bw(base_size=12) + custom_theme
+
+top_growth_1971_plot
+
+ggsave('top_growth_1971.png',
+       top_growth_1971_plot,
+       width = 10,
+       height = 6)
+```
+
+<br>
+
+The six countries that had the largest growth in expected years of female schooling from 1970-2015 came from regions around the world: Europe (Belgium, Iceland), West Africa (Benin), East Africa (Burundi), the Middle East (Turkey, Iran). It is interesting that in 2015, girls in Benin and Burundi have the same expected schooling years as girls in Belgium and Iceland did in 1971 (about 12 years). 
+
+<br>
+
+We will now look at countries that had the largest growth in expected years of female schooling in the 21st century. Here are the countries where expected schooling years for girls grew the most from 2000 to 2015:
+
+```{r}
+top_growth_country_2000 <- as.list(schooling_growth_2000$Country.Name)[0:6]%>%
+  append('World')
+top_growth_2000 = indicator_data(countries = top_growth_country_2000, ind_name = 'Expected years of schooling, female')
+```
+
+
+```{r echo = FALSE}
+knitr::kable(schooling_growth_2000[0:6,0:2], format="markdown")
+```
+<br>
+
+```{r echo = FALSE}
+
+top_growth_2000_plot <- ggplot (top_growth_2000, aes(x=Year,y=col_name, group=Country.Code,color=Country.Name)) + geom_line(size=.8) + guides(color = guide_legend(title = "Country")) + scale_x_continuous(name="Year", limits=c(2000, 2015)) + labs(title = 'Expected Female Schooling for Highest Growth Countries (2000-2015)') + scale_y_continuous(name = "Expected Years of Schooling") + theme_bw(base_size=12) + custom_theme
+
+top_growth_2000_plot
+
+ggsave('top_growth_2000.png',
+       top_growth_2000_plot,
+       width = 10,
+       height = 6)
+
+```
+
+<br>
+
+Africa and South Asia were most strongly represented in countries that experienced the largest growth in expected years of female schooling from 2000-2015.
+
+<br>
+
+### Conclusion
+
+The data explored in this project tell a story of girls across the world enrolling in all levels of school at increasing rates. The Middle East, North Africa, and Sub-Saharan Africa have lower enrollment rates than the rest of the world, especially at the preprimary and tertiary levels. The expected years of schooling in these regions, however, are increasing and in some cases are approaching the enrollment rates and expected schooling years that countries in Europe had in 1970.
+
+Another interesting trend is that female tertiary enrollment numbers have met or exceeded that of male across the world. In Latin America and Europe, female tertiary enrollment is about 10% higher than that of men. In North America, the gap is over 25%. 
+
+While girls in most countries have increased their expected years of schooling, some countries have seen particularly large growth in this area. We tracked the growth of 6 countries in Africa and South Asia that saw female expected years of schooling increase by around 5 years from 2000 to 2015. 
+
+### Future Work
+
+The countries that saw the highest growth in expected years of female schooling could be studied to see if policies they enacted could be adopted by other countries. 
+
+The gap between men and women with regards to tertiary enrollment in Europe and the Americas is worth exploring. Two questions that come to mind are:
+
+* What is the reason that fewer men than women are pursuing post-secondary education?
+* Is it a problem that fewer men than women are pursuing post-secondary education?
+
+Another are for exploration is the connection between education and other fields such as violence, health, and employment. 
+
+* Is there a connection between female expected years of schooling and female property ownership?
+* Is there a connection between female tertiary enrollment rates and violence experienced by women?
+
+<br>
